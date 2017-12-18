@@ -16,6 +16,7 @@ import pandas as pd
 from threading import Timer
 from sync_replicas_optimizer_modified.sync_replicas_optimizer_modified import TimeoutReplicasOptimizer
 from backup_worker_experiment.backup_worker_optimizer import BackupOptimizer
+from sync_replicas import LowCommSync
 import os.path
 import time
 
@@ -68,6 +69,7 @@ tf.app.flags.DEFINE_string('subset', 'train', 'Either "train" or "validation".')
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             'Whether to log device placement.')
 tf.app.flags.DEFINE_integer('num_of_instances_cifar10', 50000, 'Number of data instances in Cifar10 dataset')
+tf.app.flags.DEFINE_integer('svd_rank', 3, 'Rank of SVD approximation')
 
 # Task ID is used to select the chief and also to access the local_step for
 # each replica to check staleness of the gradients in sync_replicas_optimizer.
@@ -230,11 +232,9 @@ def train(target, all_data, all_labels, cluster_spec):
         # softmax cross entropy and the relularization loss
 #            regu_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
         total_loss = calc_loss(logits, label_placeholder)
-
-#        predictions = tf.nn.softmax(logits)
-#        train_top1_error = top_k_error(predictions, label_placeholder, 1)
         
         opt = tf.train.AdamOptimizer(lr)
+
         if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
             opt = TimeoutReplicasOptimizer(
                 opt,
@@ -247,37 +247,19 @@ def train(target, all_data, all_labels, cluster_spec):
                 total_num_replicas=num_workers
                 )
         else:
-#            opt = tf.train.SyncReplicasOptimizerV2(
-            opt = tf.train.SyncReplicasOptimizer(
-                opt,
-                replicas_to_aggregate=num_replicas_to_aggregate,
-                total_num_replicas=num_workers)
+            use_svd_compress = FLAGS.svd_rank > 0
+            kwargs = {'replicas_to_aggregate': num_replicas_to_aggregate,
+                      'total_num_replicas': num_workers,
+                      'compress': use_svd_compress,
+                      'svd_rank': FLAGS.svd_rank}
+            print('#'*40)
+            print(kwargs)
+            print('#'*40)
+            opt = tf.train.LowCommSync(opt, global_step=global_step, **kwargs)
 
         # Compute gradients with respect to the loss.
         grads = opt.compute_gradients(total_loss)
-        #compute weighted gradients here.
-        #===============================================================================================
-        '''
-        #define a placeholder for weighted vector, i.e. LS solution
-        weight_vec_placeholder = tf.placeholder(dtype=tf.float32,
-                                                shape=(num_workers,))
-        grad_list = [x[0] for x in grads]
-        new_grad_list = []
-        #times gradient from each worker with the corresponding weight
-        #which is just scalar multiplication
-        for g_idx in range(len(grad_list)):
-            grad_on_worker = grad_list[g_idx]
-            weight = tf.slice(weight_vec_placeholder, [FLAGS.task_id], [1])
-            tf.logging.info("Logging Happens Here!")
-            tf.logging.info(weight[0])
-            new_grad_list.append(tf.scalar_mul(weight[0], grad_on_worker))
-        grad_new = []
-        #regenerate the weighted gradients, merging all weighted vector
-        for x_idx in range(len(grads)):
-            grad_elem = grads[x_idx]
-            grad_new.append((new_grad_list[x_idx], grad_elem[1]))
-        '''
-        #===============================================================================================
+
         if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
             apply_gradients_op = opt.apply_gradients(grads, FLAGS.task_id, global_step=global_step, collect_cdfs=FLAGS.worker_times_cdf_method)
 #            apply_gradients_op = opt.apply_gradients(grads, FLAGS.task_id, global_step=global_step)
@@ -360,57 +342,16 @@ def train(target, all_data, all_labels, cluster_spec):
 
             run_options = tf.RunOptions()
             run_metadata = tf.RunMetadata()
-            #=============================================================================================== 
-            '''
-            LS_start_time = time.time()
-            interval_2 = np.arange(0, int(num_workers))
-            workers_to_kill = np.random.choice(interval_2, FLAGS.num_worker_kill, replace=False)
-            #interval_2 = np.arange(0, WORKER_NUM)
-            #workers_to_kill = np.random.choice(interval_2, NUM_WORKER_KILL, replace=False)
-            A = np.zeros((int(num_workers), int(num_batches_per_epoch)))
-            for i in range(A.shape[0]):
-              if i == A.shape[0]-1:
-                A[i][idx_list[i]] = 1
-                A[i][idx_list[0]] = 1
-              else:
-                A[i][idx_list[i]] = 1
-                A[i][idx_list[i+1]] = 1
-
-            for i in range(len(idx_list)):
-              element = idx_list[i]
-              if element == A.shape[1]-1:
-                idx_list[i] = 0
-              else:
-                idx_list[i] += 1
-
-            for k in workers_to_kill:
-              A[k] = 0
-
-            A_for_calc = np.transpose(A)
-            ls_solution = np.dot(np.linalg.pinv(A_for_calc), b)
-            tf.logging.info("workers killed this iteration:")
-            tf.logging.info(str(workers_to_kill))
-            tf.logging.info("The matrix to solve:")
-            for item in A_for_calc:
-              tf.logging.info(str(item))
-            tf.logging.info("Solution of LS:")
-            tf.logging.info(str(ls_solution)) 
-            LS_duration = time.time() - LS_start_time
-            tf.logging.info("LS run time: %s" % str(LS_duration))
-            '''
-            #===============================================================================================             
 
             if FLAGS.timeline_logging:
                 run_options.trace_level=tf.RunOptions.FULL_TRACE
                 run_options.output_partition_graphs=True
 
             #feed_dict[weight_vec_placeholder] = ls_solution
-            tf.logging.info("RUNNING SESSION... %f" % time.time())
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
             loss_value, step = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
                 [train_op, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
-            tf.logging.info("DONE RUNNING SESSION...")
 
             if FLAGS.worker_times_cdf_method:
                 timeout_client.broadcast_worker_finished_computing_gradients(cur_iteration)
