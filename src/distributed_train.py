@@ -255,7 +255,7 @@ def train(target, all_data, all_labels, cluster_spec):
             print('#'*40)
             print(kwargs)
             print('#'*40)
-            opt = tf.train.LowCommSync(opt, global_step=global_step, **kwargs)
+            opt = LowCommSync(opt, global_step=global_step, **kwargs)
 
         # Compute gradients with respect to the loss.
         grads = opt.compute_gradients(total_loss)
