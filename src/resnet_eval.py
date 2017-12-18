@@ -27,13 +27,12 @@ from cifar10_input import *
 FLAGS = tf.app.flags.FLAGS
 
 def main(unused_argv=None):
-    if tf.gfile.Exists(FLAGS.eval_dir):
-        tf.gfile.DeleteRecursively(FLAGS.eval_dir)
-    tf.gfile.MakeDirs(FLAGS.eval_dir)
-    maybe_download_and_extract()
-    eval_data, eval_labels = read_validation_data()
-    nn_eval.evaluate(eval_data, eval_labels, out_dir=FLAGS.out_dir)
-
+  if tf.gfile.Exists(FLAGS.eval_dir):
+    tf.gfile.DeleteRecursively(FLAGS.eval_dir)
+  tf.gfile.MakeDirs(FLAGS.eval_dir)
+  maybe_download_and_extract()
+  eval_data, eval_labels = read_validation_data()
+  nn_eval.evaluate(eval_data, eval_labels)
 
 if __name__ == '__main__':
-    tf.app.run()
+  tf.app.run()

@@ -208,4 +208,4 @@ def launch_manager(sess, tf_flags):
     rpc_client.check_ready_to_start()
     time.sleep(1)
 
-  return rpc_client, timeout_server,
+  return rpc_client, timeout_server

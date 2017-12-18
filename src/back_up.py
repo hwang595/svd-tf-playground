@@ -43,7 +43,8 @@ def create_variables(name, shape, initializer=tf.contrib.layers.xavier_initializ
                           shape,
                           stddev=0.1,
                           seed=SEED,
-                          dtype=tf.float32))
+                          dtype=tf.float32)
+        , name=name)
     return new_variables
 
 
@@ -75,10 +76,10 @@ def batch_normalization_layer(input_layer, dimension):
 #    gamma = tf.Varibale('gamma', dimension, tf.float32,
 #                                initializer=tf.constant_initializer(1.0, tf.float32))
     beta = tf.Variable(
-        tf.constant(0.0, shape=[dimension], dtype=tf.float32))
+        tf.constant(0.0, shape=[dimension], dtype=tf.float32), name='beta')
 
     gamma = tf.Variable(
-        tf.constant(1.0, shape=[dimension], dtype=tf.float32))
+        tf.constant(1.0, shape=[dimension], dtype=tf.float32), name='gamma')
     bn_layer = tf.nn.batch_normalization(input_layer, mean, variance, beta, gamma, BN_EPSILON)
 
     return bn_layer
@@ -144,15 +145,15 @@ def residual_block(input_layer, output_channel, first_block=False):
         raise ValueError('Output and input channel does not match in residual blocks!!!')
 
     # The first conv layer of the first residual block does not need to be normalized and relu-ed.
-#    with tf.variable_scope('conv1_in_block'):
-    if first_block:
-        filter = create_variables(name='conv', shape=[3, 3, input_channel, output_channel])
-        conv1 = tf.nn.conv2d(input_layer, filter=filter, strides=[1, 1, 1, 1], padding='SAME')
-    else:
-        conv1 = bn_relu_conv_layer(input_layer, [3, 3, input_channel, output_channel], stride)
+    with tf.variable_scope('conv1_in_block'):
+        if first_block:
+            filter = create_variables(name='conv', shape=[3, 3, input_channel, output_channel])
+            conv1 = tf.nn.conv2d(input_layer, filter=filter, strides=[1, 1, 1, 1], padding='SAME')
+        else:
+            conv1 = bn_relu_conv_layer(input_layer, [3, 3, input_channel, output_channel], stride)
 
-#    with tf.variable_scope('conv2_in_block'):
-    conv2 = bn_relu_conv_layer(conv1, [3, 3, output_channel, output_channel], 1)
+    with tf.variable_scope('conv2_in_block'):
+        conv2 = bn_relu_conv_layer(conv1, [3, 3, output_channel, output_channel], 1)
 
     # When the channels of input layer and conv2 does not match, we add zero pads to increase the
     #  depth of input layers
@@ -179,41 +180,41 @@ def inference(input_tensor_batch, n, reuse):
     '''
 
     layers = []
-#    with tf.variable_scope('conv0', reuse=reuse):
-    conv0 = conv_bn_relu_layer(input_tensor_batch, [3, 3, 3, 16], 1)
-    activation_summary(conv0)
-    layers.append(conv0)
+    with tf.variable_scope('conv0', reuse=reuse):
+        conv0 = conv_bn_relu_layer(input_tensor_batch, [3, 3, 3, 16], 1)
+        activation_summary(conv0)
+        layers.append(conv0)
 
     for i in range(n):
-#        with tf.variable_scope('conv1_%d' %i, reuse=reuse):
-        if i == 0:
-            conv1 = residual_block(layers[-1], 16, first_block=True)
-        else:
-            conv1 = residual_block(layers[-1], 16)
-        activation_summary(conv1)
-        layers.append(conv1)
+        with tf.variable_scope('conv1_%d' %i, reuse=reuse):
+            if i == 0:
+                conv1 = residual_block(layers[-1], 16, first_block=True)
+            else:
+                conv1 = residual_block(layers[-1], 16)
+            activation_summary(conv1)
+            layers.append(conv1)
 
     for i in range(n):
-#        with tf.variable_scope('conv2_%d' %i, reuse=reuse):
-        conv2 = residual_block(layers[-1], 32)
-        activation_summary(conv2)
-        layers.append(conv2)
+        with tf.variable_scope('conv2_%d' %i, reuse=reuse):
+            conv2 = residual_block(layers[-1], 32)
+            activation_summary(conv2)
+            layers.append(conv2)
 
     for i in range(n):
-#        with tf.variable_scope('conv3_%d' %i, reuse=reuse):
-        conv3 = residual_block(layers[-1], 64)
-        layers.append(conv3)
+        with tf.variable_scope('conv3_%d' %i, reuse=reuse):
+            conv3 = residual_block(layers[-1], 64)
+            layers.append(conv3)
         assert conv3.get_shape().as_list()[1:] == [8, 8, 64]
 
-#    with tf.variable_scope('fc', reuse=reuse):
-    in_channel = layers[-1].get_shape().as_list()[-1]
-    bn_layer = batch_normalization_layer(layers[-1], in_channel)
-    relu_layer = tf.nn.relu(bn_layer)
-    global_pool = tf.reduce_mean(relu_layer, [1, 2])
+    with tf.variable_scope('fc', reuse=reuse):
+        in_channel = layers[-1].get_shape().as_list()[-1]
+        bn_layer = batch_normalization_layer(layers[-1], in_channel)
+        relu_layer = tf.nn.relu(bn_layer)
+        global_pool = tf.reduce_mean(relu_layer, [1, 2])
 
-    assert global_pool.get_shape().as_list()[-1:] == [64]
-    output = output_layer(global_pool, 10)
-    layers.append(output)
+        assert global_pool.get_shape().as_list()[-1:] == [64]
+        output = output_layer(global_pool, 10)
+        layers.append(output)
 
     return layers[-1]
 

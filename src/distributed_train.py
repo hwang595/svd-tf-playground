@@ -1,4 +1,7 @@
-# Adapted from https://github.com/wenxinxu/resnet_in_tensorflow
+# Coder: Wenxin Xu
+# Github: https://github.com/wenxinxu/resnet_in_tensorflow
+# ==============================================================================
+#Revised by: Hongyi Wang
 
 from __future__ import absolute_import
 from __future__ import division
@@ -11,9 +14,8 @@ from cifar10_input import *
 import pandas as pd
 
 from threading import Timer
-#  from sync_replicas_optimizer_modified.sync_replicas_optimizer_modified import TimeoutReplicasOptimizer
-#  from backup_worker_experiment.backup_worker_optimizer import BackupOptimizer
-from sync_replicas import LowCommSync
+from sync_replicas_optimizer_modified.sync_replicas_optimizer_modified import TimeoutReplicasOptimizer
+from backup_worker_experiment.backup_worker_optimizer import BackupOptimizer
 import os.path
 import time
 
@@ -30,7 +32,6 @@ from tensorflow.python.ops import state_ops
 from tensorflow.python.ops import logging_ops
 from tensorflow.python.client import timeline
 from tensorflow.python.ops import data_flow_ops
-from tensorflow.python import debug as tf_debug
 from timeout_manager import launch_manager
 
 np.set_printoptions(threshold=np.nan)
@@ -59,14 +60,14 @@ tf.app.flags.DEFINE_string('train_dir', '/tmp/imagenet_train',
                            """and checkpoint.""")
 tf.app.flags.DEFINE_integer('rpc_port', 1235,
                            """Port for timeout communication""")
+
 tf.app.flags.DEFINE_integer('max_steps', 1000000, 'Number of batches to run.')
-tf.app.flags.DEFINE_integer('batch_size', 32, 'Batch size.')
+tf.app.flags.DEFINE_integer('batch_size', 128, 'Batch size.')
 tf.app.flags.DEFINE_integer('num_worker_kill', 3, 'Number of workers to kill.')
 tf.app.flags.DEFINE_string('subset', 'train', 'Either "train" or "validation".')
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             'Whether to log device placement.')
 tf.app.flags.DEFINE_integer('num_of_instances_cifar10', 50000, 'Number of data instances in Cifar10 dataset')
-tf.app.flags.DEFINE_integer('svd_rank', 3, 'Rank of SVD approximation')
 
 # Task ID is used to select the chief and also to access the local_step for
 # each replica to check staleness of the gradients in sync_replicas_optimizer.
@@ -182,7 +183,6 @@ def train(target, all_data, all_labels, cluster_spec):
     '''
     This is the main function for training
     '''
-    maybe_download_and_extract()  # from cifar10, get the data
     image_placeholder = tf.placeholder(dtype=tf.float32,
                                             shape=[FLAGS.batch_size, IMG_HEIGHT,
                                                     IMG_WIDTH, IMG_DEPTH])
@@ -204,7 +204,7 @@ def train(target, all_data, all_labels, cluster_spec):
 
     with tf.device(
         tf.train.replica_device_setter(
-        #cpu only
+        #cpu only    
 #            worker_device='/job:worker/task:%d' % FLAGS.task_id,
         #with gpu enabled
             worker_device='/job:worker/task:%d/gpu:0' % FLAGS.task_id,
@@ -233,44 +233,61 @@ def train(target, all_data, all_labels, cluster_spec):
 
 #        predictions = tf.nn.softmax(logits)
 #        train_top1_error = top_k_error(predictions, label_placeholder, 1)
-
+        
         opt = tf.train.AdamOptimizer(lr)
-        use_svd_compress = FLAGS.svd_rank > 0
-        kwargs = {'replicas_to_aggregate': num_replicas_to_aggregate,
-                  'total_num_replicas': num_workers,
-                  'compress': use_svd_compress,
-                  'svd_rank': FLAGS.svd_rank}
-        print('#'*40)
-        print(kwargs)
-        print('#'*40)
-        opt = LowCommSync(opt, global_step=global_step, **kwargs)
-
-        #  if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
-            #  opt = TimeoutReplicasOptimizer(
-                #  opt,
-                #  global_step,
-                #  total_num_replicas=num_workers)
-        #  elif FLAGS.backup_worker_method:
-            #  opt = BackupOptimizer(
-                #  opt,
-                #  replicas_to_aggregate=num_replicas_to_aggregate,
-                #  total_num_replicas=num_workers
-                #  )
-        #  else:
-#  #            opt = tf.train.SyncReplicasOptimizerV2(
-            #  opt = tf.train.SyncReplicasOptimizer(
-                #  opt,
-                #  replicas_to_aggregate=num_replicas_to_aggregate,
-                #  total_num_replicas=num_workers)
+        if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
+            opt = TimeoutReplicasOptimizer(
+                opt,
+                global_step,
+                total_num_replicas=num_workers)
+        elif FLAGS.backup_worker_method:
+            opt = BackupOptimizer(
+                opt,
+                replicas_to_aggregate=num_replicas_to_aggregate,
+                total_num_replicas=num_workers
+                )
+        else:
+#            opt = tf.train.SyncReplicasOptimizerV2(
+            opt = tf.train.SyncReplicasOptimizer(
+                opt,
+                replicas_to_aggregate=num_replicas_to_aggregate,
+                total_num_replicas=num_workers)
 
         # Compute gradients with respect to the loss.
         grads = opt.compute_gradients(total_loss)
         #compute weighted gradients here.
-        #  apply_gradients_op, opt_data = opt.apply_gradients(grads,
-                                                           #  global_step=global_step)
-        apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
+        #===============================================================================================
+        '''
+        #define a placeholder for weighted vector, i.e. LS solution
+        weight_vec_placeholder = tf.placeholder(dtype=tf.float32,
+                                                shape=(num_workers,))
+        grad_list = [x[0] for x in grads]
+        new_grad_list = []
+        #times gradient from each worker with the corresponding weight
+        #which is just scalar multiplication
+        for g_idx in range(len(grad_list)):
+            grad_on_worker = grad_list[g_idx]
+            weight = tf.slice(weight_vec_placeholder, [FLAGS.task_id], [1])
+            tf.logging.info("Logging Happens Here!")
+            tf.logging.info(weight[0])
+            new_grad_list.append(tf.scalar_mul(weight[0], grad_on_worker))
+        grad_new = []
+        #regenerate the weighted gradients, merging all weighted vector
+        for x_idx in range(len(grads)):
+            grad_elem = grads[x_idx]
+            grad_new.append((new_grad_list[x_idx], grad_elem[1]))
+        '''
+        #===============================================================================================
+        if FLAGS.interval_method or FLAGS.worker_times_cdf_method:
+            apply_gradients_op = opt.apply_gradients(grads, FLAGS.task_id, global_step=global_step, collect_cdfs=FLAGS.worker_times_cdf_method)
+#            apply_gradients_op = opt.apply_gradients(grads, FLAGS.task_id, global_step=global_step)
+        elif FLAGS.backup_worker_method:
+            apply_gradients_op = opt.apply_gradients(grads, FLAGS.task_id, global_step=global_step)
+        else:
+           apply_gradients_op = opt.apply_gradients(grads, global_step=global_step)
+#           apply_gradients_op = opt.apply_gradients(grad_new, global_step=global_step)
         with tf.control_dependencies([apply_gradients_op]):
-            train_op = tf.identity(total_loss, name='train_op')
+            train_op = tf.identity(total_loss, name='train_op')            
 
         # Initialize a saver to save checkpoints. Merge all summaries, so we can run all
         # summarizing operations by running summary_op. Initialize a new session
@@ -302,8 +319,6 @@ def train(target, all_data, all_labels, cluster_spec):
             allow_soft_placement=True,
             log_device_placement=FLAGS.log_device_placement)
         sess = sv.prepare_or_wait_for_session(target, config=sess_config)
-        sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-
         queue_runners = tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS)
         sv.start_queue_runners(sess, queue_runners)
         tf.logging.info('Started %d queues for processing input data.',
@@ -323,15 +338,18 @@ def train(target, all_data, all_labels, cluster_spec):
         iterations_finished = set()
 
         if FLAGS.task_id == 0 and FLAGS.interval_method:
-            opt.start_interval_updates(sess, timeout_client)
-
-        summary_data = []
+            opt.start_interval_updates(sess, timeout_client)   
+        '''
+        np.random.seed(SEED)
+        b = np.ones(int(num_batches_per_epoch))
+        interval = np.arange(0, int(num_batches_per_epoch))
+        idx_list = np.random.choice(interval, int(num_workers), replace=False)     
+        '''
         while not sv.should_stop():
         #    try:
             sys.stdout.flush()
             tf.logging.info("A new iteration...")
             cur_iteration += 1
-            tf.logging.info("Current optimization step: {}".format(cur_iteration))
 
             if FLAGS.worker_times_cdf_method:
                 sess.run([opt._wait_op])
@@ -342,48 +360,68 @@ def train(target, all_data, all_labels, cluster_spec):
 
             run_options = tf.RunOptions()
             run_metadata = tf.RunMetadata()
+            #=============================================================================================== 
+            '''
+            LS_start_time = time.time()
+            interval_2 = np.arange(0, int(num_workers))
+            workers_to_kill = np.random.choice(interval_2, FLAGS.num_worker_kill, replace=False)
+            #interval_2 = np.arange(0, WORKER_NUM)
+            #workers_to_kill = np.random.choice(interval_2, NUM_WORKER_KILL, replace=False)
+            A = np.zeros((int(num_workers), int(num_batches_per_epoch)))
+            for i in range(A.shape[0]):
+              if i == A.shape[0]-1:
+                A[i][idx_list[i]] = 1
+                A[i][idx_list[0]] = 1
+              else:
+                A[i][idx_list[i]] = 1
+                A[i][idx_list[i+1]] = 1
+
+            for i in range(len(idx_list)):
+              element = idx_list[i]
+              if element == A.shape[1]-1:
+                idx_list[i] = 0
+              else:
+                idx_list[i] += 1
+
+            for k in workers_to_kill:
+              A[k] = 0
+
+            A_for_calc = np.transpose(A)
+            ls_solution = np.dot(np.linalg.pinv(A_for_calc), b)
+            tf.logging.info("workers killed this iteration:")
+            tf.logging.info(str(workers_to_kill))
+            tf.logging.info("The matrix to solve:")
+            for item in A_for_calc:
+              tf.logging.info(str(item))
+            tf.logging.info("Solution of LS:")
+            tf.logging.info(str(ls_solution)) 
+            LS_duration = time.time() - LS_start_time
+            tf.logging.info("LS run time: %s" % str(LS_duration))
+            '''
+            #===============================================================================================             
 
             if FLAGS.timeline_logging:
-                run_options.trace_level = tf.RunOptions.FULL_TRACE
-                run_options.output_partition_graphs = True
+                run_options.trace_level=tf.RunOptions.FULL_TRACE
+                run_options.output_partition_graphs=True
 
             #feed_dict[weight_vec_placeholder] = ls_solution
             tf.logging.info("RUNNING SESSION... %f" % time.time())
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
-            #  print(comp_data, apply_data)
-            start_train_op = time.time()
-            loss_value, apply_datum, step = sess.run(
+            loss_value, step = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
-                [train_op, apply_data, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
-            finish_time = time.time()
-            tf.logging.info("Done running session")
-            #  tf.summary.scalar('loss_train', loss_value)
-            #  tf.summary.scalar('step_train', step)
-            #  tf.summary.scalar('batch_size_train', batch_size)
-
-            # data prep is getting the images, flipping the images, etc in
-            # `generate_augment_train_batch` and `fill_feed_dict`
-            assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
-            datum = {'loss': float(loss_value), 'step': int(step),
-                     'cur_iteration': cur_iteration,
-                     'train_op_time': finish_time - start_train_op,
-                     'epoch_train_time': finish_time - start_time}
-            datum.update(apply_datum)
-            datum.update({key: getattr(FLAGS, key)
-                          for key in ['initial_learning_rate', 'svd_rank',
-                                      'num_residual_blocks', 'batch_size']})
-            datum.update({'num_workers': num_workers})
-            datum['num_layers'] = datum['num_residual_blocks']*6 + 2
-            datum['examples_per_sec'] = datum['batch_size'] / datum['epoch_train_time']
-            #  datum.update(opt_datum)
-            summary_data += [datum]
+                [train_op, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
             tf.logging.info("DONE RUNNING SESSION...")
+
+            if FLAGS.worker_times_cdf_method:
+                timeout_client.broadcast_worker_finished_computing_gradients(cur_iteration)
+            assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
+            finish_time = time.time()
             if FLAGS.timeline_logging:
                 tl = timeline.Timeline(run_metadata.step_stats)
                 ctf = tl.generate_chrome_trace_format()
-                with open('%s/worker=%d_timeline_iter=%d.json' % (FLAGS.train_dir, FLAGS.task_id, step), 'w') as f:
+                with open('%s/worker=%d_timeline_iter=%d.json' % (FLAGS.train_dir, FLAGS.task_id, step), 'w'):
                     f.write(ctf)
-            if cur_iteration > FLAGS.max_steps:
+            if step > FLAGS.max_steps:
                 break
 
             duration = time.time() - start_time
@@ -393,27 +431,26 @@ def train(target, all_data, all_labels, cluster_spec):
             tf.logging.info(format_str %
                         (FLAGS.task_id, datetime.now(), step, loss_value,
                             examples_per_sec, duration))
-            print('is chief =', is_chief)
-            print('step =', step)
-            if is_chief and step % 1 == 0:
-                tf.logging.info(summary_data[-1])
-                print(summary_data[-1])
-                df = pd.DataFrame(summary_data)
-                ids = [str(summary_data[0][key])
-                       for key in ['batch_size', 'svd_rank', 'num_layers', 'num_workers']]
-                filename = "-".join(ids)
-                df.to_csv('/home/ubuntu/cluster-shared/csv/' + filename + '.csv')
             if is_chief and next_summary_time < time.time() and FLAGS.should_summarize:
                 tf.logging.info('Running Summary operation on the chief.')
                 summary_str = sess.run(summary_op)
                 sv.summary_computed(sess, summary_str)
                 tf.logging.info('Finished running Summary operation.')
                 next_summary_time += FLAGS.save_summaries_secs
+        #    except tf.errors.DeadlineExceededError:
+        #        tf.logging.info("Killed at time %f" % time.time())
+                #sess.reset_kill()
+        #    except:
+        #        tf.logging.info("Unexpected error: %s" % str(sys.exc_info()[0]))
+                #sess.reset_kill()
         if is_chief:
             tf.logging.info('Elapsed Time: %f' % (time.time()-begin_time))
         sv.stop()
 
         if is_chief:
             saver.save(sess,
-                       os.path.join(FLAGS.train_dir, 'model.ckpt'),
-                       global_step=global_step)
+                        os.path.join(FLAGS.train_dir, 'model.ckpt'),
+                        global_step=global_step)
+
+
+
