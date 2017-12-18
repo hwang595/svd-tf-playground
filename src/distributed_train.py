@@ -266,8 +266,9 @@ def train(target, all_data, all_labels, cluster_spec):
         elif FLAGS.backup_worker_method:
             apply_gradients_op = opt.apply_gradients(grads, FLAGS.task_id, global_step=global_step)
         else:
-           apply_gradients_op = opt.apply_gradients(grads, global_step=global_step)
+           apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
 #           apply_gradients_op = opt.apply_gradients(grad_new, global_step=global_step)
+        
         with tf.control_dependencies([apply_gradients_op]):
             train_op = tf.identity(total_loss, name='train_op')            
 
