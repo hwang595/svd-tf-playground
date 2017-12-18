@@ -6,7 +6,7 @@
 from __future__ import print_function
 import sys
 import threading
-import queue
+import Queue
 import paramiko as pm
 import boto3
 import time
@@ -15,9 +15,6 @@ import os
 from scp import SCPClient
 from pprint import pprint
 import subprocess
-import pathlib
-from joblib import Parallel, delayed
-
 
 class Cfg(dict):
 
@@ -96,7 +93,7 @@ def tf_ec2_run(argv, configuration):
 
 
     def _scp(dir, instance):
-        pprint(f'SCP {dir} to {instance}')
+        print('SCP {} to {}'.format(dir, instance))
         client = connect_client(instance)
         scp = SCPClient(client.get_transport())
         scp.put(dir, remote_path='DistributedMNIST/', recursive=True)
@@ -301,7 +298,7 @@ def tf_ec2_run(argv, configuration):
         live_instances = ec2.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': [
                                               'running']}, {'Name': 'key-name', 'Values': [configuration["key_name"]]}])
         threads = []
-        q = queue.Queue()
+        q = Queue.Queue()
 
         # Run commands in parallel, writing to the queue
         for instance in live_instances:
@@ -464,7 +461,7 @@ def tf_ec2_run(argv, configuration):
 
         # Run the commands via ssh in parallel
         threads = []
-        q = queue.Queue()
+        q = Queue.Queue()
 
         for name, command_and_machine in setup_machine_assignments.items():
             instance = command_and_machine["instance"]
@@ -481,7 +478,7 @@ def tf_ec2_run(argv, configuration):
             t.join()
 
         threads = []
-        q = queue.Queue()
+        q = Queue.Queue()
 
         for name, command_and_machine in command_machine_assignments.items():
             instance = command_and_machine["instance"]
@@ -544,7 +541,7 @@ def tf_ec2_run(argv, configuration):
         live_instances = ec2.instances.filter(
             Filters=[{'Name': 'instance-state-name', 'Values': ['running']}])
         threads = []
-        q = queue.Queue()
+        q = Queue.Queue()
         for instance in live_instances:
             if instance.instance_id in instance_ids_to_shutdown:
                 commands = ["sudo pkill -9 python"]
@@ -560,7 +557,7 @@ def tf_ec2_run(argv, configuration):
         live_instances = ec2.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': [
                                               'running']},  {'Name': 'key-name', 'Values': [configuration["key_name"]]}])
         threads = []
-        q = queue.Queue()
+        q = Queue.Queue()
         for instance in live_instances:
             commands = ["sudo pkill -9 python"]
             t = threading.Thread(
@@ -680,7 +677,7 @@ def tf_ec2_run(argv, configuration):
         live_instances = ec2.instances.filter(Filters=[{'Name': 'instance-state-name', 'Values': [
                                               'running']}, {'Name': 'key-name', 'Values': [configuration["key_name"]]}])
         threads = []
-        q = queue.Queue()
+        q = Queue.Queue()
         for instance in live_instances:
             if instance.instance_id in instance_ids_to_run_command:
                 commands = [command]
@@ -872,7 +869,7 @@ cfg = Cfg({
         "git clone https://github.com/hwang595/svd-tf-playground.git;",
         "cd svd-tf-playground;",
         "git pull",
-        #"sudo pip install -r src/requirements.txt",
+        "sudo pip install -r src/requirements.txt",
         "python /home/ubuntu/svd-tf-playground/src/cifar10_input.py"
     ],
 
