@@ -16,6 +16,7 @@ from tensorflow.python.ops import variables
 from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python.training import optimizer
 from tensorflow.python.training import queue_runner
+from tensorflow.python.ops import logging_ops
 
 
 def _4d_to_2d(x, shape):
@@ -226,9 +227,10 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
 
             # sync_op will be assigned to the same device as the global step.
             with ops.device(global_step.device), ops.name_scope(""):
-                aggregated_grads_and_vars, decode_data = self._decode(coding)
-                update_op = self._opt.apply_gradients(aggregated_grads_and_vars,
-                                                      global_step)
+                with ops.control_dependencies([logging_ops.Print(0, [0], message="Starting to decode grads")]):
+                    aggregated_grads_and_vars, decode_data = self._decode(coding)
+                    update_op = self._opt.apply_gradients(aggregated_grads_and_vars,
+                                                          global_step)
 
             # Create token queue.
             with ops.device(global_step.device), ops.name_scope(""):
