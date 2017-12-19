@@ -133,7 +133,6 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
         return super(LowCommSync, self).__init__(*args, **kwargs)
 
     def _encode(self, grads_and_vars, shapes):
-        return grads_and_vars
         if not self.compress:
             return grads_and_vars
         tf.logging.info("Entering encode")
@@ -142,7 +141,6 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
         return coding
 
     def _decode(self, coding):
-        return coding, {}
         if self.compress:
             tf.logging.info("Entering decode")
             grads_and_vars, decode_data = decode(coding)
