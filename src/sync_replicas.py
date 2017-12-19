@@ -78,17 +78,18 @@ def _svd_encode(grad, r=3, ndims=None, shape=None):
 
 
 def encode(grads_and_vars, r=2, shapes=None):
-    for i, ((grad, var), shape) in enumerate(zip(grads_and_vars, shapes)):
-        with tf.device(var.device):
-            ndims = len(shape)
-            code = _svd_encode(grad, r=r, ndims=ndims, shape=shape)
-            grads_and_vars[i] = (code, var)
+    with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Encode Gradients on Workers")]):
+        for i, ((grad, var), shape) in enumerate(zip(grads_and_vars, shapes)):
+            with tf.device(var.device):
+                ndims = len(shape)
+                code = _svd_encode(grad, r=r, ndims=ndims, shape=shape)
+                grads_and_vars[i] = (code, var)
 
-    n_bytes = _list_bytes(grads_and_vars)
-    for i, (g, v) in enumerate(grads_and_vars):
-        if isinstance(g, dict):
-            grads_and_vars[i][0]['n_bytes'] = n_bytes
-    return grads_and_vars
+        n_bytes = _list_bytes(grads_and_vars)
+        for i, (g, v) in enumerate(grads_and_vars):
+            if isinstance(g, dict):
+                grads_and_vars[i][0]['n_bytes'] = n_bytes
+        return grads_and_vars
 
 
 def decode(grads_and_vars):
@@ -225,8 +226,8 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
             print(_tmp_list)
             #print([(g.device, v.device) for g, v in grads_and_vars])
             # to make this happen on each worker
-            with ops.device(_tmp_list[0][0]):
-                coding = self._encode(aggregated_grads_and_vars, shapes=shapes)
+            #with ops.device(_tmp_list[0][0]):
+            #    coding = self._encode(aggregated_grads_and_vars, shapes=shapes)
 
             # sync_op will be assigned to the same device as the global step.
             with ops.device(global_step.device), ops.name_scope(""):

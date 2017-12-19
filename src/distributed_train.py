@@ -16,7 +16,7 @@ import pandas as pd
 from threading import Timer
 from sync_replicas_optimizer_modified.sync_replicas_optimizer_modified import TimeoutReplicasOptimizer
 from backup_worker_experiment.backup_worker_optimizer import BackupOptimizer
-from sync_replicas import LowCommSync
+from sync_replicas import LowCommSync, encode
 import os.path
 import time
 
@@ -264,7 +264,10 @@ def train(target, all_data, all_labels, cluster_spec):
         elif FLAGS.backup_worker_method:
             apply_gradients_op = opt.apply_gradients(grads, FLAGS.task_id, global_step=global_step)
         else:
-           apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
+            # SVD encode happens right here:
+            shapes = [g.get_shape() for g, _ in grads]
+            encoded_grads = encode(grads, r=2, shapes=shapes)
+            apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
 #           apply_gradients_op = opt.apply_gradients(grad_new, global_step=global_step)
         
         with tf.control_dependencies([apply_gradients_op]):
