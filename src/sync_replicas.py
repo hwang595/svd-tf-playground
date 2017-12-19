@@ -136,17 +136,16 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
     def _encode(self, grads_and_vars, shapes):
         if not self.compress:
             return grads_and_vars
-        tf.logging.info("Entering encode")
-        coding = encode(grads_and_vars, r=self.svd_rank, shapes=shapes)
-        tf.logging.info("Leaving encode")
-        return coding
+        with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Encode Gradients on Workers")]):
+            coding = encode(grads_and_vars, r=self.svd_rank, shapes=shapes)
+            return coding
 
     def _decode(self, coding):
         if self.compress:
-            tf.logging.info("Entering decode")
-            grads_and_vars, decode_data = decode(coding)
-            tf.logging.info("Leaving decode")
-            return grads_and_vars, decode_data
+            with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Decode Gradients on PS")]):
+                grads_and_vars, decode_data = decode(coding)
+                #tf.logging.info("Leaving decode")
+                return grads_and_vars, decode_data
         return coding, {}
 
     def apply_gradients(self, grads_and_vars, global_step=None, name=None):
@@ -227,10 +226,9 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
 
             # sync_op will be assigned to the same device as the global step.
             with ops.device(global_step.device), ops.name_scope(""):
-                with ops.control_dependencies([logging_ops.Print(0, [0], message="Starting to decode grads")]):
-                    aggregated_grads_and_vars, decode_data = self._decode(coding)
-                    update_op = self._opt.apply_gradients(aggregated_grads_and_vars,
-                                                          global_step)
+                aggregated_grads_and_vars, decode_data = self._decode(coding)
+                update_op = self._opt.apply_gradients(aggregated_grads_and_vars,
+                                                      global_step)
 
             # Create token queue.
             with ops.device(global_step.device), ops.name_scope(""):
