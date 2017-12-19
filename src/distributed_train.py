@@ -175,8 +175,6 @@ def generate_augment_train_batch(train_data, train_labels, train_batch_size, loc
     train_batch_tmp = train_data[start:end]
     train_batch = random_crop_and_flip(train_batch_tmp, padding_size=FLAGS.padding_size)
     batch_labels = train_labels[start:end]
-    tf.logging.info("Batch shapes %s" % str(train_batch.shape))
-    tf.logging.info("Standardized batch shapes %s" % str(whitening_image(train_batch).shape))
     # Most of the time return the non distorted image
     return train_batch, batch_labels, local_data_batch_idx, epoch_counter
 
@@ -207,9 +205,9 @@ def train(target, all_data, all_labels, cluster_spec):
     with tf.device(
         tf.train.replica_device_setter(
         #cpu only    
-#            worker_device='/job:worker/task:%d' % FLAGS.task_id,
+            worker_device='/job:worker/task:%d' % FLAGS.task_id,
         #with gpu enabled
-            worker_device='/job:worker/task:%d/gpu:0' % FLAGS.task_id,
+        #    worker_device='/job:worker/task:%d/gpu:0' % FLAGS.task_id,
             cluster=cluster_spec)):
 
         global_step = tf.Variable(0, name="global_step", trainable=False)
