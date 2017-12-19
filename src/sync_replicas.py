@@ -221,8 +221,12 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
             aggregated_grads_and_vars = zip(aggregated_grad, var_list)
 
             shapes = [g.get_shape() for g, _ in grads_and_vars]
-            print([(g.device, v.device) for g, v in grads_and_vars])
-            coding = self._encode(aggregated_grads_and_vars, shapes=shapes)
+            _tmp_list = [(g.device, v.device) for g, v in grads_and_vars]
+            print(_tmp_list)
+            #print([(g.device, v.device) for g, v in grads_and_vars])
+            # to make this happen on each worker
+            with ops.device(_tmp_list[0][0]):
+                coding = self._encode(aggregated_grads_and_vars, shapes=shapes)
 
             # sync_op will be assigned to the same device as the global step.
             with ops.device(global_step.device), ops.name_scope(""):
