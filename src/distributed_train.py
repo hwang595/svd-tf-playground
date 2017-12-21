@@ -264,7 +264,7 @@ def train(target, all_data, all_labels, cluster_spec):
         else:
             # SVD encode happens right here:
             shapes = [g.get_shape() for g, _ in grads]
-            encoded_grads = encode(grads, r=2, shapes=shapes)
+            encoded_grads, print_ops = encode(grads, r=2, shapes=shapes)
             #apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
             apply_gradients_op = opt.apply_gradients(grads, global_step=global_step)
 #           apply_gradients_op = opt.apply_gradients(grad_new, global_step=global_step)
@@ -352,7 +352,7 @@ def train(target, all_data, all_labels, cluster_spec):
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
             loss_value, step, _ = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
-                [train_op, global_step, encoded_grads], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
+                [train_op, global_step, print_ops], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
 
             if FLAGS.worker_times_cdf_method:
                 timeout_client.broadcast_worker_finished_computing_gradients(cur_iteration)
