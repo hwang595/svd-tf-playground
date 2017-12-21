@@ -283,4 +283,5 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
                             global_step, name="SetGlobalStep"))
             self.chief_init_op = control_flow_ops.group(*(chief_init_ops))
             self._gradients_applied = True
-        return train_op, decode_data
+        #return train_op, decode_data
+        return train_op
