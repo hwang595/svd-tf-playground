@@ -143,7 +143,7 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
 
     def _decode(self, coding):
         if self.compress:
-            with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Decode Gradients on PS")]):
+            with ops.control_dependencies([logging_ops.Print(0, [global_step], message="Start Decode Gradients on PS")]):
                 grads_and_vars, decode_data = decode(coding)
                 return grads_and_vars, decode_data
         return coding, {}
@@ -196,7 +196,7 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
             # after the decoding is done:, we aggregate them into aggregator:
             #for grad, var in grads_and_vars:
             with ops.device(global_step.device), ops.name_scope(""):
-                with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Aggregating on Master!")]):
+                with ops.control_dependencies([logging_ops.Print(0, [global_step], message="Start Aggregating on Master!")]):
                     for grad, var in decoded_grads_and_vars:
                         var_list.append(var)
                         with ops.device(var.device):
