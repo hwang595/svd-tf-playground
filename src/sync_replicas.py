@@ -216,15 +216,15 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
                                 aggregated_grad.append(grad_accum.take_grad(
                                     self._replicas_to_aggregate))
                             else:
-                                with ops.control_dependencies([logging_ops.Print(0, [0], message="Grad is what we don't know!")]):
-                                    if not isinstance(grad, ops.IndexedSlices):
-                                        raise ValueError("Unknown grad type!")
-                                    grad_accum = data_flow_ops.SparseConditionalAccumulator(
-                                        grad.dtype, shape=(), shared_name=var.name + "/grad_accum")
-                                    train_ops.append(grad_accum.apply_indexed_slices_grad(
-                                        grad, local_step=self._local_step))
-                                    aggregated_grad.append(grad_accum.take_indexed_slices_grad(
-                                        self._replicas_to_aggregate))
+                                #with ops.control_dependencies([logging_ops.Print(0, [0], message="Grad is what we don't know!")]):
+                                if not isinstance(grad, ops.IndexedSlices):
+                                    raise ValueError("Unknown grad type! Is Dict: {}".format(isinstance(grad, dict)))
+                                grad_accum = data_flow_ops.SparseConditionalAccumulator(
+                                    grad.dtype, shape=(), shared_name=var.name + "/grad_accum")
+                                train_ops.append(grad_accum.apply_indexed_slices_grad(
+                                    grad, local_step=self._local_step))
+                                aggregated_grad.append(grad_accum.take_indexed_slices_grad(
+                                    self._replicas_to_aggregate))
                             #####################################################################################################
                             self._accumulator_list.append((grad_accum, var.device))
 
