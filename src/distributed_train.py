@@ -265,7 +265,8 @@ def train(target, all_data, all_labels, cluster_spec):
             # SVD encode happens right here:
             shapes = [g.get_shape() for g, _ in grads]
             encoded_grads = encode(grads, r=2, shapes=shapes)
-            apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
+            #apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
+            apply_gradients_op = opt.apply_gradients(grads, global_step=global_step)
 #           apply_gradients_op = opt.apply_gradients(grad_new, global_step=global_step)
         
         with tf.control_dependencies([apply_gradients_op]):
