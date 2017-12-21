@@ -235,7 +235,7 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
 
             # sync_op will be assigned to the same device as the global step.
             with ops.device(global_step.device), ops.name_scope(""):
-                aggregated_grads_and_vars, decode_data = self._decode(coding)
+                #aggregated_grads_and_vars, decode_data = self._decode(coding)
                 update_op = self._opt.apply_gradients(aggregated_grads_and_vars,
                                                       global_step)
 
