@@ -195,7 +195,7 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
 
             # after the decoding is done:, we aggregate them into aggregator:
             #for grad, var in grads_and_vars:
-            with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Aggregate Grads")]):
+            with ops.device(global_step.device), ops.name_scope(""):
                 for grad, var in decoded_grads_and_vars:
                     var_list.append(var)
                     with ops.device(var.device):
@@ -226,7 +226,7 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
                         #####################################################################################################
                         self._accumulator_list.append((grad_accum, var.device))
 
-            aggregated_grads_and_vars = zip(aggregated_grad, var_list)
+                aggregated_grads_and_vars = zip(aggregated_grad, var_list)
 
             shapes = [g.get_shape() for g, _ in grads_and_vars]
             _tmp_list = [(g.device, v.device) for g, v in grads_and_vars]
