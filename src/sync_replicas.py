@@ -78,21 +78,18 @@ def _svd_encode(grad, r=3, ndims=None, shape=None):
 
 
 def encode(grads_and_vars, r=2, shapes=None):
-    with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Encode Gradients on Workers")]):
-        for i, ((grad, var), shape) in enumerate(zip(grads_and_vars, shapes)):
-            with tf.device(var.device):
-                print_ops = logging_ops.Print(0, [0], message="Test if this in on worker or master")
-                ndims = len(shape)
-                code = _svd_encode(grad, r=r, ndims=ndims, shape=shape)
-                # add this back again
-                #grads_and_vars[i] = (code, var)
+    for i, ((grad, var), shape) in enumerate(zip(grads_and_vars, shapes)):
+        with tf.device(grad.device):
+            print_ops = logging_ops.Print(0, [0], message="Encoding the grads!")
+            ndims = len(shape)
+            code = _svd_encode(grad, r=r, ndims=ndims, shape=shape)
+            grads_and_vars[i] = (code, var)
 
-        #n_bytes = _list_bytes(grads_and_vars)
-        #for i, (g, v) in enumerate(grads_and_vars):
-        #    if isinstance(g, dict):
-        #        grads_and_vars[i][0]['n_bytes'] = n_bytes
-        #return grads_and_vars
-        return print_ops
+        n_bytes = _list_bytes(grads_and_vars)
+        for i, (g, v) in enumerate(grads_and_vars):
+            if isinstance(g, dict):
+                grads_and_vars[i][0]['n_bytes'] = n_bytes
+        return grads_and_vars, print_ops
 
 
 def decode(grads_and_vars):
@@ -148,7 +145,6 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
         if self.compress:
             with ops.control_dependencies([logging_ops.Print(0, [0], message="Start Decode Gradients on PS")]):
                 grads_and_vars, decode_data = decode(coding)
-                #tf.logging.info("Leaving decode")
                 return grads_and_vars, decode_data
         return coding, {}
 
@@ -194,17 +190,21 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
             variables.global_variables())
 
         with ops.name_scope(None, self._name):
-            for grad, var in grads_and_vars:
+            with ops.device(global_step.device), ops.name_scope(""):
+                decoded_grads_and_vars, decode_data = self._decode(grads_and_vars)
+
+            # after the decoding is done:, we aggregate them into aggregator:
+            #for grad, var in grads_and_vars:
+            for grad, var in decoded_grads_and_vars:
                 var_list.append(var)
                 with ops.device(var.device):
                     # Dense gradients.
                     #########################################Test Grad Type Here###########################################
                     if grad is None:
-                        with ops.control_dependencies([logging_ops.Print(0, [0], message="Grad is None!")]):
-                            aggregated_grad.append(None)  # pass-through.
-                            continue
+                        aggregated_grad.append(None)  # pass-through.
+                        continue
                     elif isinstance(grad, ops.Tensor):
-                        with ops.control_dependencies([logging_ops.Print(0, [0], message="Grad is a Tensor!")]):
+                        with ops.control_dependencies([logging_ops.Print(0, [0], message="Grad Agg Happens Right Here!")]):
                             grad_accum = data_flow_ops.ConditionalAccumulator(
                                 grad.dtype,
                                 shape=var.get_shape(),
@@ -231,10 +231,6 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
             shapes = [g.get_shape() for g, _ in grads_and_vars]
             _tmp_list = [(g.device, v.device) for g, v in grads_and_vars]
             print(_tmp_list)
-            #print([(g.device, v.device) for g, v in grads_and_vars])
-            # to make this happen on each worker
-            #with ops.device(_tmp_list[0][0]):
-            #    coding = self._encode(aggregated_grads_and_vars, shapes=shapes)
 
             # sync_op will be assigned to the same device as the global step.
             with ops.device(global_step.device), ops.name_scope(""):
