@@ -350,9 +350,9 @@ def train(target, all_data, all_labels, cluster_spec):
 
             #feed_dict[weight_vec_placeholder] = ls_solution
             tf.logging.info("Data batch index: %s, Current epoch idex: %s" % (str(epoch_counter), str(local_data_batch_idx)))
-            loss_value, step = sess.run(
+            loss_value, step, _ = sess.run(
                 #[train_op, global_step], feed_dict={feed_dict, x}, run_metadata=run_metadata, options=run_options)
-                [train_op, global_step], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
+                [train_op, global_step, encoded_grads], feed_dict=feed_dict, run_metadata=run_metadata, options=run_options)
 
             if FLAGS.worker_times_cdf_method:
                 timeout_client.broadcast_worker_finished_computing_gradients(cur_iteration)
