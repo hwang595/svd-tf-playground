@@ -224,8 +224,6 @@ def train(target, all_data, all_labels, cluster_spec):
         # reuse=True to the variable scopes of train graph
         logits = inference(image_placeholder, FLAGS.num_residual_blocks, reuse=False)
 
-#            vali_logits = inference(self.vali_image_placeholder, FLAGS.num_residual_blocks, reuse=True)
-
         # The following codes calculate the train loss, which is consist of the
         # softmax cross entropy and the relularization loss
 #            regu_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
@@ -266,7 +264,8 @@ def train(target, all_data, all_labels, cluster_spec):
         else:
             # SVD encode happens right here:
             shapes = [g.get_shape() for g, _ in grads]
-            encoded_grads = encode(grads, r=2, shapes=shapes)
+            tmp_grad = tf.identity(grads)
+            encoded_grads = encode(tmp_grad, r=2, shapes=shapes)
             apply_gradients_op, apply_data = opt.apply_gradients(grads, global_step=global_step)
 #           apply_gradients_op = opt.apply_gradients(grad_new, global_step=global_step)
         
