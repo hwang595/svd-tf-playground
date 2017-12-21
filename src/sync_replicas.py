@@ -143,7 +143,7 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
 
     def _decode(self, coding):
         if self.compress:
-            with ops.control_dependencies([logging_ops.Print(0, [global_step], message="Start Decode Gradients on PS")]):
+            with ops.control_dependencies([logging_ops.Print(0, [self._global_step], message="Start Decode Gradients on PS")]):
                 grads_and_vars, decode_data = decode(coding)
                 return grads_and_vars, decode_data
         return coding, {}
