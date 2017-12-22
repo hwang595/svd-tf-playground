@@ -190,8 +190,8 @@ class LowCommSync(tf.train.SyncReplicasOptimizer):
             variables.global_variables())
 
         with ops.name_scope(None, self._name):
-            #with ops.device(global_step.device), ops.name_scope(""):
-            #    decoded_grads_and_vars, decode_data = self._decode(grads_and_vars)
+            with ops.device(global_step.device), ops.name_scope(""):
+                decoded_grads_and_vars, decode_data = self._decode(grads_and_vars)
 
             # after the decoding is done:, we aggregate them into aggregator:
             #for grad, var in grads_and_vars:
