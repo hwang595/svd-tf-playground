@@ -264,7 +264,7 @@ def train(target, all_data, all_labels, cluster_spec):
         else:
             # SVD encode happens right here:
             shapes = [g.get_shape() for g, _ in grads]
-            for s in shapes
+            for s in shapes:
                 print(s)
                 print("=======================================================")
             if use_svd_compress:
