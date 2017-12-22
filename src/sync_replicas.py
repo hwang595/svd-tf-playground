@@ -79,7 +79,7 @@ def _svd_encode(grad, r=3, ndims=None, shape=None):
 
 def encode(grads_and_vars, r=2, shapes=None):
     for i, ((grad, var), shape) in enumerate(zip(grads_and_vars, shapes)):
-        with ops.control_dependencies([logging_ops.Print(0, [shape], message="Encoding Gradients on Workers")]):
+        with ops.control_dependencies([logging_ops.Print(0, [i], message="Encoding Gradients on Workers")]):
             with tf.device(grad.device):
                 ndims = len(shape)
                 code = _svd_encode(grad, r=r, ndims=ndims, shape=shape)
